@@ -1,0 +1,4 @@
+To search for weather data based on City/Zip:
+<highlight><tab><symbol>oweather 'London|London,uk|10011,us|80337,de'<end>
+
+If the city returned is not the one you wanted, try using the zip search.
