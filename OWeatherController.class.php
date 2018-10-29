@@ -5,16 +5,16 @@ namespace Budabot\User\Modules;
 use Budabot\Core\xml;
 
 /**
- * Authors: 
+ * Authors:
  *	- Nadyita (RK5)
  *
  * @Instance
  *
  * Commands this controller contains:
  *	@DefineCommand(
- *		command     = 'oweather', 
- *		accessLevel = 'all', 
- *		description = 'View Weather', 
+ *		command     = 'oweather',
+ *		accessLevel = 'all',
+ *		description = 'View Weather for any location',
  *		help        = 'oweather.txt'
  *	)
  */
@@ -60,6 +60,7 @@ class OWeatherController {
 			292 => "WNW",
 			315 => "NW",
 			337 => "NNW",
+			360 => "N",
 		);
 		$current = "unknown";
 		$currentDiff = 360;
