@@ -73,6 +73,33 @@ class OWeatherController {
 	}
 
 	/**
+	 * Convert the windspeed in m/s into the wind's strength according to beaufort
+	 */
+	public function getWindStrength($speed) {
+		$beaufortScale = array(
+			32.7 => 'hurricane',
+			28.5 => 'violent storm',
+			24.5 => 'storm',
+			20.8 => 'strong gale',
+			17.2 => 'gale',
+			13.9 => 'high wind',
+			10.8 => 'strong breeze',
+			 8.0 => 'fresh breeze',
+			 5.5 => 'moderate breeze',
+			 3.4 => 'gentle breeze',
+			 1.6 => 'light breeze',
+			 0.5 => 'light air',
+			 0.0 => 'calm',
+		);
+		foreach ($beaufortScale as $windSpeed => $windStrength) {
+			if ($speed >= $windSpeed) {
+				return $windStrength;
+			}
+		}
+		return 'unknown';
+	}
+
+	/**
 	 * Return a link to OpenStreetMap at the given coordinates
 	 */
 	public function getOSMLink($coords) {
@@ -100,6 +127,7 @@ class OWeatherController {
 		$humidity      = $data["main"]["humidity"];
 		$pressureHPA   = $data["main"]["pressure"];
 		$pressureHG    = number_format($data["main"]["pressure"] * 0.02952997, 2);
+		$windStrength  = $this->getWindStrength($data["wind"]["speed"]);
 		$windSpeedKMH  = number_format($data["wind"]["speed"] * 3600 / 1000.0, 1);
 		$windSpeedMPH  = number_format($data["wind"]["speed"] * 3600 / 1609.3, 1);
 		$windDirection = $this->degreeToDirection($data["wind"]["deg"]);
@@ -122,12 +150,45 @@ class OWeatherController {
 		        "Humidity: <highlight>${humidity}%<end><br>".
 		        "Visibility: <highlight>$visibility<end><br>".
 		        "Pressure: <highlight>$pressureHPA hPa (${pressureHG}\" Hg)<end><br>".
-		        "Wind: <highlight>$windSpeedKMH km/h ($windSpeedMPH mph)<end> from the <highlight>$windDirection<end><br>".
+		        "Wind: <highlight>$windStrength<end> - <highlight>$windSpeedKMH km/h ($windSpeedMPH mph)<end> from the <highlight>$windDirection<end><br>".
 		        "<br>".
 		        "Sunrise: <highlight>$sunRise<end><br>".
 		        "Sunset: <highlight>$sunSet<end>";
 
 		return $blob;
+	}
+
+	/**
+	 * Download the weather data from the API, returning
+	 * either false for an unknown error, a string with the error message
+	 * or a hash with the data.
+	 */
+	public function downloadWeather($apiKey, $location) {
+		$apiUrl = "http://api.openweathermap.org/data/2.5/weather?".http_build_query(array(
+			"q"     => $location,
+			"appid" => $apiKey,
+			"units" => "metric",
+			"mode"  => "json"
+		));
+		$httpOptions = array(
+			'http' => array(
+				'ignore_errors' => true,
+				'header' => "Content-Type: application/json\r\n"
+			)
+		);
+		$httpContext  = stream_context_create($httpOptions);
+		$response = file_get_contents($apiUrl, false, $httpContext);
+		$data = json_decode($response, true);
+		if (!is_array($data) || !array_key_exists("cod", $data)) {
+			return false;
+		}
+		if ($data["cod"] != 200) {
+			if (array_key_exists("message", $data)) {
+				return $data["message"];
+			}
+			return false;
+		}
+		return $data;
 	}
 
 	/**
@@ -142,31 +203,19 @@ class OWeatherController {
 			$sendto->reply("There is either no API key or an invalid one was set.");
 			return;
 		}
-		$apiUrl = "http://api.openweathermap.org/data/2.5/weather?".http_build_query(array(
-			"q"     => $location,
-			"appid" => $apiKey,
-			"units" => "metric",
-			"mode"  => "json"
-		));
-		$response = file_get_contents($apiUrl);
-		$data = json_decode($response, true);
-		if (!is_array($data) || !array_key_exists("cod", $data)) {
-			$sendto->reply("There was an error looking up the weather.");
+		$data = $this->downloadWeather($apiKey, $location);
+		if (is_string($data)) {
+			$sendto->reply("Error looking up the weather: <highlight>$data<end>.");
 			return;
 		}
-		if ($data["cod"] != 200) {
-			if (!array_key_exists("message", $data)) {
-				$sendto->reply("There was an error looking up the weather.");
-			} else {
-				$sendto->reply("There was an error looking up the weather: <highlight>".$data["message"]."<end>.");
-			}
+		if (!is_array($data)) {
+			$sendto->reply("Unknown error while looking up the weather.");
 			return;
 		}
-		$latString = $data["coord"]["lat"] > 0 ? $data["coord"]["lat"]."N" : (-1 * $data["coord"]["lat"])."S";
-		$lonString = $data["coord"]["lon"] > 0 ? $data["coord"]["lon"]."E" : (-1 * $data["coord"]["lon"])."W";
+
 		$blob = $this->weatherToString($data);
 
-		$msg = $this->text->makeBlob('Weather for '.$data["name"], $blob);
+		$msg = $this->text->makeBlob("Weather for ".$data["name"].", ".$data["sys"]["country"], $blob);
 
 		$sendto->reply($msg);
 	}
