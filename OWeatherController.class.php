@@ -71,6 +71,65 @@ class OWeatherController {
 		}
 		return $current;
 	}
+
+	/**
+	 * Return a link to OpenStreetMap at the given coordinates
+	 */
+	public function getOSMLink($coords) {
+		$zoom = 12; // Zoom is 1 to 20 (full in)
+		$lat = number_format($coords["lat"], 4);
+		$lon = number_format($coords["lon"], 4);
+
+		return "https://www.openstreetmap.org/#map=$zoom/$lat/$lon";
+	}
+
+	/**
+	 * Convert the result hash of the API into a blob string
+	 */
+	public function weatherToString($data) {
+		$latString     = $data["coord"]["lat"] > 0 ? "N".$data["coord"]["lat"] : "S".(-1 * $data["coord"]["lat"]);
+		$lonString     = $data["coord"]["lon"] > 0 ? "E".$data["coord"]["lon"] : "W".(-1 * $data["coord"]["lon"]);
+		$mapCommand    = $this->text->makeChatcmd("OpenStreetMap", "/start ".$this->getOSMLink($data["coord"]));
+		$luString      = date("D, Y-m-d H:i:s", $data["dt"])." UTC";
+		$locName       = $data["name"];
+		$locCC         = $data["sys"]["country"];
+		$tempC         = number_format($data["main"]["temp"], 1);
+		$tempF         = number_format($data["main"]["temp"] * 1.8 + 32, 1);
+		$weatherString = $data["weather"][0]["description"];
+		$clouds        = $data["clouds"]["all"];
+		$humidity      = $data["main"]["humidity"];
+		$pressureHPA   = $data["main"]["pressure"];
+		$pressureHG    = number_format($data["main"]["pressure"] * 0.02952997, 2);
+		$windSpeedKMH  = number_format($data["wind"]["speed"] * 3600 / 1000.0, 1);
+		$windSpeedMPH  = number_format($data["wind"]["speed"] * 3600 / 1609.3, 1);
+		$windDirection = $this->degreeToDirection($data["wind"]["deg"]);
+		$sunRise       = date("H:i:s", $data["sys"]["sunrise"])." UTC";
+		$sunSet        = date("H:i:s", $data["sys"]["sunset"] )." UTC";
+		$visibility    = "no data";
+		if (array_key_exists("visibility", $data) && $data["visibility"] > 0) {
+			$visibilityKM = number_format($data["visibility"]/1000, 1);
+			$visibilityMiles = number_format($data["visibility"]/1609.3, 1);
+		        $visibility = "$visibilityKM km ($visibilityMiles miles)";
+		}
+
+		$blob = "Last Updated: <highlight>$luString<end><br>".
+		        "<br>".
+		        "Location: <highlight>$locName<end>, <highlight>$locCC<end><br>".
+		        "Lat/Lon: <highlight>${latString}° ${lonString}°<end> $mapCommand<br>".
+		        "<br>".
+		        "Currently: <highlight>${tempC}°C (${tempF}°F)<end>, <highlight>$weatherString<end><br>".
+		        "Clouds: <highlight>${clouds}%<end><br>".
+		        "Humidity: <highlight>${humidity}%<end><br>".
+		        "Visibility: <highlight>$visibility<end><br>".
+		        "Pressure: <highlight>$pressureHPA hPa (${pressureHG}\" Hg)<end><br>".
+		        "Wind: <highlight>$windSpeedKMH km/h ($windSpeedMPH mph)<end> from the <highlight>$windDirection<end><br>".
+		        "<br>".
+		        "Sunrise: <highlight>$sunRise<end><br>".
+		        "Sunset: <highlight>$sunSet<end>";
+
+		return $blob;
+	}
+
 	/**
 	 * @HandlesCommand("oweather")
 	 * @Matches("/^oweather (.+)$/i")
@@ -105,30 +164,7 @@ class OWeatherController {
 		}
 		$latString = $data["coord"]["lat"] > 0 ? $data["coord"]["lat"]."N" : (-1 * $data["coord"]["lat"])."S";
 		$lonString = $data["coord"]["lon"] > 0 ? $data["coord"]["lon"]."E" : (-1 * $data["coord"]["lon"])."W";
-		$blob = "Last Updated:: <highlight>".date("D, Y-m-d H:i:s", $data["dt"])." UTC<end><br>".
-		        "<br>".
-		        "Location: <highlight>".$data["name"]."<end>, <highlight>".$data["sys"]["country"]."<end><br>".
-		        "Lat/Lon: <highlight>$latString $lonString<end><br>".
-		        "<br>".
-		        "Currently: <highlight>".number_format($data["main"]["temp"], 1)."°C ".
-		          "(".number_format($data["main"]["temp"] * 1.8 + 32, 1)."°F)<end>, <highlight>".
-		          $data["weather"][0]["description"]."<end><br>".
-		        "Clouds: <highlight>".$data["clouds"]["all"]."%<end><br>".
-		        "Humidity: <highlight>".$data["main"]["humidity"]."%<end><br>".
-		        "Visibility: <highlight>";
-		if (array_key_exists("visibility", $data) && $data["visibility"] > 0) {
-			$blob .= number_format($data["visibility"]/1000, 1)." km ".
-			         "(".number_format($data["visibility"]/1609.3, 1)." miles)";
-		} else {
-			$blob .= "no data";
-		}
-		$blob .= "<end><br>".
-		         "Pressure: <highlight>".$data["main"]["pressure"]." hPa<end><br>".
-		         "Wind: <highlight>".$data["wind"]["speed"]." m/s<end> ".
-		           "from the <highlight>".$this->degreeToDirection($data["wind"]["deg"])."<end><br>".
-		         "<br>".
-		         "Sunrise: <highlight>".date("H:i:s", $data["sys"]["sunrise"])." UTC<end><br>".
-		         "Sunset: <highlight>".date("H:i:s", $data["sys"]["sunset"])." UTC<end>";
+		$blob = $this->weatherToString($data);
 
 		$msg = $this->text->makeBlob('Weather for '.$data["name"], $blob);
 
